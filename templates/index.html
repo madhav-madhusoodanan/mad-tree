@@ -239,7 +239,8 @@
             
             const folderName = document.getElementById('folderName').value.trim();
             const fileInput = document.getElementById('files');
-            const files = fileInput.files;
+            // Convert FileList to Array for queuing
+            const files = Array.from(fileInput.files); 
             const statusDiv = document.getElementById('statusMessage');
             const uploadBtn = document.getElementById('uploadBtn');
             const progressContainer = document.getElementById('progressContainer');
@@ -257,57 +258,102 @@
             progressContainer.style.display = 'block';
             
             statusDiv.className = 'status-info';
-            statusDiv.innerText = `Preparing ${files.length} files for upload...`;
+            statusDiv.innerText = `Preparing ${files.length} files for parallel upload...`;
 
-            const formData = new FormData();
-            for (let i = 0; i < files.length; i++) {
-                formData.append('file', files[i]); 
+            // --- Queue & Progress Tracking Setup ---
+            const MAX_CONCURRENT_UPLOADS = 5; // Upload 5 files at the exact same time
+            let activeUploads = 0;
+            let filesCompleted = 0;
+            const totalFilesCount = files.length;
+            let totalBytes = files.reduce((total, file) => total + file.size, 0);
+            let uploadedBytes = 0;
+            let hasError = false;
+
+            const uploadUrl = `/upload/${encodeURIComponent(folderName)}`;
+
+            // This function manages the queue
+            function processQueue() {
+                // If all files are done
+                if (files.length === 0 && activeUploads === 0) {
+                    if (!hasError) {
+                        uploadBtn.disabled = false;
+                        uploadBtn.innerText = "Upload Files";
+                        statusDiv.className = 'status-success';
+                        statusDiv.innerText = `Success! All ${filesCompleted} files uploaded successfully.`;
+                        progressBar.value = 100;
+                        progressText.innerText = "100%";
+                        
+                        // Optional: Reset form after success
+                        // document.getElementById('uploadForm').reset();
+                    }
+                    return;
+                }
+
+                // Fill empty slots up to the concurrency limit
+                while (activeUploads < MAX_CONCURRENT_UPLOADS && files.length > 0) {
+                    const file = files.shift(); // Take the next file from the queue
+                    activeUploads++;
+                    uploadSingleFile(file);
+                }
             }
 
-            const xhr = new XMLHttpRequest();
-            const uploadUrl = `/upload/${encodeURIComponent(folderName)}`;
-            
-            xhr.open('POST', uploadUrl, true);
+            // This function uploads a single file
+            function uploadSingleFile(file) {
+                const formData = new FormData();
+                formData.append('file', file);
 
-            xhr.upload.onprogress = function(event) {
-                if (event.lengthComputable) {
-                    const percentComplete = Math.round((event.loaded / event.total) * 100);
-                    progressBar.value = percentComplete;
-                    progressText.innerText = percentComplete + '%';
-                    
-                    if (percentComplete === 100) {
-                        statusDiv.innerText = "Processing files on server... Please wait.";
-                    } else {
-                        statusDiv.innerText = `Uploading... ${percentComplete}%`;
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', uploadUrl, true);
+
+                let previousLoaded = 0;
+
+                // Track progress for this specific file and add to global total
+                xhr.upload.onprogress = function(event) {
+                    if (event.lengthComputable) {
+                        const diff = event.loaded - previousLoaded;
+                        uploadedBytes += diff;
+                        previousLoaded = event.loaded;
+
+                        // Calculate global percentage
+                        let percentComplete = 0;
+                        if (totalBytes > 0) {
+                            percentComplete = Math.min(100, Math.round((uploadedBytes / totalBytes) * 100));
+                        }
+                        
+                        progressBar.value = percentComplete;
+                        progressText.innerText = percentComplete + '%';
+                        statusDiv.innerText = `Uploading... (${filesCompleted}/${totalFilesCount} files complete)`;
                     }
-                }
-            };
+                };
 
-            xhr.onload = function() {
-                uploadBtn.disabled = false;
-                uploadBtn.innerText = "Upload Files";
-                
-                if (xhr.status === 200) {
-                    statusDiv.className = 'status-success';
-                    statusDiv.innerText = "Success! All files uploaded successfully.";
-                    
-                    // Optional: Reset form after success
-                    // document.getElementById('uploadForm').reset();
-                    // progressContainer.style.display = 'none';
-                } else {
-                    statusDiv.className = 'status-error';
-                    statusDiv.innerText = "Upload Failed: \n" + xhr.responseText;
-                }
-            };
+                xhr.onload = function() {
+                    activeUploads--;
+                    if (xhr.status === 200) {
+                        filesCompleted++;
+                        processQueue(); // Start the next file in the queue
+                    } else {
+                        handleError(`Upload failed for ${file.name}: ${xhr.statusText}`);
+                    }
+                };
 
-            xhr.onerror = function() {
+                xhr.onerror = function() {
+                    activeUploads--;
+                    handleError(`Network error while uploading ${file.name}. Please check your connection.`);
+                };
+
+                xhr.send(formData);
+            }
+
+            function handleError(msg) {
+                hasError = true;
                 uploadBtn.disabled = false;
                 uploadBtn.innerText = "Upload Files";
                 statusDiv.className = 'status-error';
-                statusDiv.innerText = "A network error occurred during upload. Please check your connection.";
-            };
+                statusDiv.innerText = msg;
+            }
 
-            xhr.send(formData);
+            // Start the process
+            processQueue();
         });
     </script>
 
