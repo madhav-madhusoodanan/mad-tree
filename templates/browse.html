@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>File Browser</title>
+    <style>
+        :root {
+            --primary-color: #0056b3;
+            --bg-color: #f4f7f6;
+            --card-bg: #ffffff;
+            --text-color: #333333;
+            --border-radius: 8px;
+            --border-color: #e0e0e0;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .browser-card {
+            background: var(--card-bg);
+            width: 100%;
+            max-width: 800px;
+            border-radius: var(--border-radius);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            overflow: hidden;
+            margin-top: 20px;
+        }
+
+        .header {
+            background-color: #fafafa;
+            padding: 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        h2 { margin: 0; font-size: 1.5rem; }
+        
+        .upload-link {
+            text-decoration: none;
+            background-color: var(--primary-color);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .breadcrumbs {
+            padding: 15px 20px;
+            background-color: white;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.95rem;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .breadcrumb-item {
+            cursor: pointer;
+            color: var(--primary-color);
+            text-decoration: underline;
+        }
+        
+        .breadcrumb-item:hover { color: #003d82; }
+        .breadcrumb-separator { color: #888; }
+
+        .file-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--border-color);
+            transition: background-color 0.2s;
+            cursor: pointer;
+        }
+
+        .file-item:hover { background-color: #f8f9fa; }
+        .file-item:last-child { border-bottom: none; }
+
+        .icon {
+            font-size: 1.5rem;
+            margin-right: 15px;
+            width: 30px;
+            text-align: center;
+        }
+
+        .folder-icon { color: #ffca28; }
+        .file-icon { color: #6c757d; }
+
+        .file-info {
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+            overflow: hidden;
+        }
+
+        .file-name {
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .file-size {
+            font-size: 0.8rem;
+            color: #6c757d;
+            margin-top: 4px;
+        }
+
+        .empty-state {
+            padding: 40px;
+            text-align: center;
+            color: #6c757d;
+        }
+
+        @media (max-width: 480px) {
+            body { padding: 10px; }
+            .header { padding: 15px; flex-direction: column; gap: 15px; align-items: flex-start;}
+        }
+    </style>
+</head>
+<body>
+
+    <div class="browser-card">
+        <div class="header">
+            <h2>File Browser</h2>
+            <a href="/" class="upload-link">Go to Upload</a>
+        </div>
+
+        <div class="breadcrumbs" id="breadcrumbs">
+            </div>
+
+        <ul class="file-list" id="fileList">
+            </ul>
+    </div>
+
+    <script>
+        let currentPath = "";
+
+        // Utility to format bytes into human readable sizes
+        function formatBytes(bytes, decimals = 2) {
+            if (!+bytes) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+        }
+
+        function renderBreadcrumbs(path) {
+            const container = document.getElementById('breadcrumbs');
+            container.innerHTML = '';
+
+            // Home link
+            const home = document.createElement('span');
+            home.className = 'breadcrumb-item';
+            home.innerText = 'Home (public)';
+            home.onclick = () => loadPath("");
+            container.appendChild(home);
+
+            if (!path) return;
+
+            const parts = path.split('/').filter(p => p !== '');
+            let accumulatedPath = "";
+
+            parts.forEach((part, index) => {
+                const separator = document.createElement('span');
+                separator.className = 'breadcrumb-separator';
+                separator.innerText = ' / ';
+                container.appendChild(separator);
+
+                accumulatedPath += (accumulatedPath ? '/' : '') + part;
+                const partPath = accumulatedPath; // capture for closure
+
+                const item = document.createElement('span');
+                item.className = 'breadcrumb-item';
+                item.innerText = part;
+                item.onclick = () => loadPath(partPath);
+                
+                // If it's the last item, don't make it look like a link
+                if (index === parts.length - 1) {
+                    item.style.color = '#333';
+                    item.style.textDecoration = 'none';
+                    item.style.cursor = 'default';
+                    item.onclick = null;
+                }
+                
+                container.appendChild(item);
+            });
+        }
+
+        function loadPath(path) {
+            const list = document.getElementById('fileList');
+            list.innerHTML = '<div class="empty-state">Loading...</div>';
+
+            fetch(`/api/browse?path=${encodeURIComponent(path)}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.error) {
+                        list.innerHTML = `<div class="empty-state" style="color:red;">Error: ${data.error}</div>`;
+                        return;
+                    }
+
+                    currentPath = data.currentPath || "";
+                    renderBreadcrumbs(currentPath);
+                    list.innerHTML = '';
+
+                    const items = data.items || [];
+
+                    if (items.length === 0) {
+                        list.innerHTML = '<div class="empty-state">This folder is empty.</div>';
+                        return;
+                    }
+
+                    // Sort: Folders first, then files alphabetically
+                    items.sort((a, b) => {
+                        if (a.isDir === b.isDir) return a.name.localeCompare(b.name);
+                        return a.isDir ? -1 : 1;
+                    });
+
+                    items.forEach(item => {
+                        const li = document.createElement('li');
+                        li.className = 'file-item';
+                        
+                        const icon = document.createElement('span');
+                        icon.className = `icon ${item.isDir ? 'folder-icon' : 'file-icon'}`;
+                        icon.innerHTML = item.isDir ? '📁' : '📄';
+                        
+                        const info = document.createElement('div');
+                        info.className = 'file-info';
+                        
+                        const name = document.createElement('div');
+                        name.className = 'file-name';
+                        name.innerText = item.name;
+
+                        info.appendChild(name);
+
+                        // Only show file size for files
+                        if (!item.isDir) {
+                            const size = document.createElement('div');
+                            size.className = 'file-size';
+                            size.innerText = formatBytes(item.size);
+                            info.appendChild(size);
+                        }
+
+                        li.appendChild(icon);
+                        li.appendChild(info);
+
+                        // Handle clicks
+                        li.onclick = () => {
+                            if (item.isDir) {
+                                const newPath = currentPath ? `${currentPath}/${item.name}` : item.name;
+                                loadPath(newPath);
+                            } else {
+                                // Open file in a new tab using your /assets route
+                                const filePath = currentPath ? `${currentPath}/${item.name}` : item.name;
+                                window.open(`/assets/${filePath}`, '_blank');
+                            }
+                        };
+
+                        list.appendChild(li);
+                    });
+                })
+                .catch(err => {
+                    list.innerHTML = '<div class="empty-state" style="color:red;">Failed to load directory.</div>';
+                });
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            loadPath("");
+        });
+    </script>
+</body>
+</html>
