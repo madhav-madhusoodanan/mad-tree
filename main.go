@@ -10,7 +10,7 @@ import (
 func main() {
 	// Create a Gin router with default middleware (logger and recovery)
 	r := gin.Default()
-   	r.MaxMultipartMemory = 8 << 20 // 8 MiB
+   	r.MaxMultipartMemory = 1 << 27 // 125 MiB
     r.Static("/assets", "./public")
   
     // 1. Tell Gin where to find your HTML templates
