@@ -51,7 +51,8 @@ func UploadFile(c *gin.Context) {
 			continue
 		}
 
-		_, err = io.Copy(out, part)
+		buffer := make([]byte, 2*1024*1024) // 1 MB buffer
+		_, err = io.CopyBuffer(out, part, buffer)
 		out.Close()
 
 		if err != nil {
